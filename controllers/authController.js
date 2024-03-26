@@ -28,7 +28,6 @@ exports.verify_token = [
 
 // cb after finding or creating the user: create a token and redirect to the frontend home page
 exports.google_callback = asyncHandler(async (req, res, next) => {
-    console.log("google callback");
     let user = req.user;
     !user && res.redirect(frontend_url + "/auth/login");
     // creating jwt and setting headers
@@ -38,12 +37,11 @@ exports.google_callback = asyncHandler(async (req, res, next) => {
 
     res.setHeader("authorization", `Bearer ${token}`);
     res.setHeader("Access-Control-Expose-Headers", "authorization");
-    // res.redirect(frontend_url + "/");
-    console.log("sending response");
+    // res.redirect(frontend_url + "/"); // this will not send the headers with the response
     res.status(200).json({
         status: "success",
-        token: token,
     });
+    // NOTE: the only way is to send token in url which is not secure
 });
 // validate fields, authenticate user, create and add token in header and return it
 exports.login_post = [

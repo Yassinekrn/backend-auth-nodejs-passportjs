@@ -13,13 +13,13 @@ passport.use(
         {
             clientID: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            callbackURL: process.env.FRONTEND_URL + "/auth/google/callback",
+            // callbackURL: process.env.FRONTEND_URL + "/auth/google/callback", // use this to make the operation work in frontend
+            callbackURL: "http://localhost:3000/auth/google/callback",
         },
         async (accessToken, refreshToken, profile, cb) => {
             try {
                 let user = await User.findOne({ googleId: profile.id });
                 if (!user) {
-                    console.log("Creating new user");
                     let uniqueUsername = "";
                     while (true) {
                         uniqueUsername = removeSpaces(profile.displayName);
@@ -39,10 +39,8 @@ passport.use(
                         password: uuidv4(),
                     });
                     await user.save();
-                    console.log("User created");
                     return cb(null, user);
                 } else {
-                    console.log("User found");
                     return cb(null, user);
                 }
             } catch (error) {
