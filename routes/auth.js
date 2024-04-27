@@ -11,4 +11,8 @@ router.post("/login", authController.login_post);
 
 router.post("/signup", authController.signup_post);
 
+router.post("/refresh-token", authController.refresh_token);
+
+router.post("/google", authController.google_post);
+
 module.exports = router;

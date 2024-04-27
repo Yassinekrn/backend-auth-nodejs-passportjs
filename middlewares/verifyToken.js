@@ -27,7 +27,7 @@ function verifyToken(req, res, next) {
     req.token = bearerToken;
 
     // Verify the token
-    jwt.verify(bearerToken, process.env.JWT_SECRET, (err, decoded) => {
+    jwt.verify(bearerToken, process.env.ACCESS_JWT_SECRET, (err, decoded) => {
         if (err) {
             // Unauthorized - Invalid token
             return res.status(401).send("Unauthorized - Invalid token");

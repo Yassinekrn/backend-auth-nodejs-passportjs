@@ -3,9 +3,9 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
-    fullName: { type: String, required: true },
-    username: { type: String, required: true, maxLength: 100, unique: true },
-    password: { type: String, required: true, maxLength: 100 },
+    fullName: { type: String, required: true, maxLength: 100, minLength: 3 },
+    username: { type: String, maxLength: 100, unique: true, minLength: 3 },
+    password: { type: String, maxLength: 100, minLength: 8 },
     googleId: { type: String },
 });
 

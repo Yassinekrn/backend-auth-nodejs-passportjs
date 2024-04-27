@@ -14,7 +14,8 @@ require("../strategies/jwt");
 require("dotenv").config();
 
 const salt = process.env.SALT;
-const secret = process.env.JWT_SECRET;
+const access_secret = process.env.ACCESS_JWT_SECRET;
+const refresh_secret = process.env.REFRESH_JWT_SECRET;
 const frontend_url = process.env.FRONTEND_URL;
 
 // returns a 200 status if the token is valid
@@ -26,15 +27,46 @@ exports.verify_token = [
     }),
 ];
 
+exports.refresh_token = [
+    asyncHandler(async (req, res, next) => {
+        const refreshToken = req.body.refreshToken;
+        if (!refreshToken) {
+            return res
+                .status(401)
+                .json({ message: "Refresh token is required" });
+        }
+
+        jwt.verify(refreshToken, refresh_secret, (err, decoded) => {
+            if (err) {
+                return res
+                    .status(400)
+                    .json({ message: "Invalid refresh token" });
+            }
+
+            let opts = {};
+            opts.expiresIn = 3600; // 1Hr
+            const access_token = jwt.sign(
+                { user: decoded.user },
+                access_secret,
+                opts
+            );
+
+            return res.status(200).json({
+                access_token: access_token,
+            });
+        });
+    }),
+];
+
 // validate fields, authenticate user, create and add token in header and return it
 exports.login_post = [
-    body("username", "Username must not be empty.")
+    body("username", "The username field is required.")
         .trim()
-        .isLength({ min: 1 })
+        .isLength({ min: 3, max: 100 })
         .escape(),
-    body("password", "Password must not be empty.")
+    body("password", "The password field is required.")
         .trim()
-        .isLength({ min: 1 })
+        .isLength({ min: 8, max: 100 })
         .escape(),
 
     asyncHandler(async (req, res, next) => {
@@ -52,60 +84,120 @@ exports.login_post = [
             if (!user) {
                 // auth failed
                 return res
-                    .status(401)
+                    .status(400)
                     .json({ message: "Invalid username or password." });
             }
 
-            const opts = {};
-            opts.expiresIn = 3600; // 1Hr
-            const token = jwt.sign({ user }, secret, opts);
+            let opts = {
+                issuer: "localhost:3000",
+                audience: "localhost:5173",
+                expiresIn: "1h",
+            };
+            const access_token = jwt.sign({ user }, access_secret, opts);
 
-            // add the token to the header
-            res.setHeader("authorization", `Bearer ${token}`);
-            res.setHeader("Access-Control-Expose-Headers", "authorization");
+            opts.expiresIn = "1y";
+            const refresh_token = jwt.sign({ user }, refresh_secret, opts);
 
             return res.status(200).json({
-                message: "Auth Passed",
+                access_token: access_token,
+                refresh_token: refresh_token,
             });
         })(req, res, next);
     }),
 ];
 
+exports.google_post = [
+    // add  validators on the  body (googleId and fullName)
+    body("googleId", "Google ID is required.").trim().escape(),
+    body("fullName", "Full name is required.")
+        .trim()
+        .isLength({ min: 3, max: 100 })
+        .escape(),
+    asyncHandler(async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) res.status(400).json({ errors: errors.array() });
+
+        const { googleId, fullName } = req.body;
+        let user = await User.findOne({ googleId: googleId }).exec();
+        if (!user) {
+            let newUser = new User({
+                googleId: googleId,
+                fullName: fullName,
+            });
+            await newUser.save();
+            user = newUser;
+        }
+        let opts = {
+            issuer: "localhost:3000",
+            audience: "localhost:5173",
+            expiresIn: "1h",
+        };
+        const access_token = jwt.sign({ user }, access_secret, opts);
+
+        opts.expiresIn = "1y";
+        const refresh_token = jwt.sign({ user }, refresh_secret, opts);
+
+        return res.status(200).json({
+            access_token: access_token,
+            refresh_token: refresh_token,
+        });
+    }),
+];
+
 // validate fields, create user, hash password, save user, redirect to login
 exports.signup_post = [
-    body("fullName", "Full name must not be empty.")
+    body("full_name", "Full name should consist of a minimum of 3 characters.")
         .trim()
-        .isLength({ min: 1 })
-        .escape(),
-    body("username", "Username must not be empty.")
+        .isLength({ min: 3, max: 100 })
+        .escape()
+        .matches(/^[\w\s'-]+$/)
+        .withMessage(
+            "Full name can only contain letters, spaces, hyphens, or apostrophes."
+        ),
+
+    body("username", "Username should consist of a minimum of 3 characters.")
         .trim()
-        .isLength({ min: 1 })
-        .escape(),
-    body("password", "Password must not be empty.")
+        .isLength({ min: 3, max: 100 })
+        .escape()
+        .isAlphanumeric()
+        .withMessage("Username must be alphanumeric."),
+
+    body("password", "Password should consist of a minimum of 8 characters.")
         .trim()
-        .isLength({ min: 1 })
-        .escape(),
-    body("confirm_password", "The password confirmation must not be empty")
+        .isLength({ min: 8, max: 100 })
+        .escape()
+        .matches(
+            /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/
+        )
+        .withMessage(
+            "Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character"
+        ),
+
+    body("confirm_password", "Password confirmation must not be empty.")
         .trim()
-        .isLength({ min: 1 })
+        .isLength({ min: 8, max: 100 })
         .escape(),
+
     body("confirm_password").custom((value, { req }) => {
         if (value !== req.body.password) {
-            throw new Error("Password confirmation does not match password");
+            throw new Error("Password confirmation does not match password.");
         }
-        return value === req.body.password;
+        return true;
     }),
-    body("username").custom(async (value, { req }) => {
+
+    body("username").custom(async (value) => {
         const userWithSameUserName = await User.findOne({
             username: value,
         }).exec();
         if (userWithSameUserName) {
-            throw new Error("Username already exists");
+            throw new Error("Username already exists.");
         }
-        return !userWithSameUserName;
+        return true;
     }),
     asyncHandler(async (req, res, next) => {
         const errors = validationResult(req);
+
+        if (!errors.isEmpty()) res.status(400).json({ errors: errors.array() });
 
         let user = new User({
             fullName: req.body.fullName,
@@ -113,23 +205,29 @@ exports.signup_post = [
             password: req.body.password,
         });
 
-        if (!errors.isEmpty()) {
-            res.json({ errors: errors.array() });
-        } else {
-            // data is valid
-            // hash the password
-            bcrypt.hash(
-                req.body.password,
-                parseInt(salt),
-                async (err, hashedPassword) => {
-                    if (err) return next(err);
-                    // otherwise, store hashedPassword in DB
-                    user.password = hashedPassword;
-                    await user.save();
-                }
-            );
-            // res.json({ message: "User created successfully" });
-            res.redirect(frontend_url + "/auth/login");
-        }
+        bcrypt.hash(
+            req.body.password,
+            parseInt(salt),
+            async (err, hashedPassword) => {
+                if (err) return next(err);
+                // otherwise, store hashedPassword in DB
+                user.password = hashedPassword;
+                await user.save();
+            }
+        );
+        // create an access token and a refresh token
+        let opts = {
+            issuer: "localhost:3000",
+            audience: "localhost:5173",
+            expiresIn: "1h",
+        };
+        const access_token = jwt.sign({ user }, access_secret, opts);
+        opts.expiresIn = "1y";
+        const refresh_token = jwt.sign({ user }, refresh_secret, opts);
+
+        res.status(200).json({
+            access_token: access_token,
+            refresh_token: refresh_token,
+        });
     }),
 ];
